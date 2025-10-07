@@ -1,4 +1,4 @@
-# 🎨 提示词随机组合器 (Prompt Randomizer)
+# 🎨 提示词随机组合器 (Prompt-word-random-combiner)
 
 一个基于 **HTML + CSS + JavaScript** 开发的轻量级网页工具，用于快速生成 **AI 绘图提示词**。
 支持分类管理、随机组合、收藏与导出，帮助你更高效地构建稳定、丰富的提示词模板。
