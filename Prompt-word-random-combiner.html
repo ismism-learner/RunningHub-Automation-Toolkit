@@ -192,13 +192,15 @@
     const COMBINATIONS_KEY = "prompt_combinations"; 
 
     function loadData() {
+        // 加载分类提示词数据
         CATEGORIES.forEach(id => {
             const data = localStorage.getItem(`prompt_${id}`);
             if (data) {
                 document.getElementById(id).value = data;
             }
         });
-        renderCombinations();
+        // 渲染组合收藏夹，确保在页面加载时加载本地存储的收藏数据
+        renderCombinations(); 
     }
 
     function saveData() {
@@ -217,11 +219,18 @@
         return prompts.length > 0 ? prompts[Math.floor(Math.random() * prompts.length)] : "";
     }
 
+    // ✅ 关键：从 localStorage 加载收藏夹数据
     function loadCombinations() {
         const data = localStorage.getItem(COMBINATIONS_KEY);
-        return data ? JSON.parse(data) : [];
+        try {
+            return data ? JSON.parse(data) : [];
+        } catch (e) {
+            console.error("Error loading combinations from local storage:", e);
+            return []; // 避免JSON解析错误导致程序崩溃
+        }
     }
 
+    // ✅ 关键：保存收藏夹数据到 localStorage
     function saveCombinations(combinations) {
         localStorage.setItem(COMBINATIONS_KEY, JSON.stringify(combinations));
     }
@@ -230,14 +239,13 @@
     function promptAndSaveCombination() {
         const defaultName = `组合 #${Date.now() % 10000}`;
         
-        // 使用 prompt() 弹窗要求用户输入提示词，并尝试预填当前输出区的内容
+        // 尝试预填当前输出区的内容
         const promptText = prompt("请输入您想收藏的组合提示词:", document.getElementById("output-area").innerText.trim());
 
         if (promptText === null || !promptText.trim()) {
             return; 
         }
 
-        // 提示用户输入名称
         const name = prompt("请为此组合命名：", defaultName);
 
         if (name) {
@@ -246,7 +254,7 @@
                 name: name.trim() || defaultName, 
                 prompt: promptText.trim() 
             });
-            saveCombinations(combinations);
+            saveCombinations(combinations); // 👈 保存到 localStorage
             renderCombinations();
             alert(`组合 "${name.trim()}" 已成功收藏!`);
         }
@@ -255,7 +263,7 @@
     function renderCombinations() {
         const listElement = document.getElementById("combination-list");
         listElement.innerHTML = ''; 
-        const combinations = loadCombinations();
+        const combinations = loadCombinations(); // 👈 从 localStorage 加载数据
 
         if (combinations.length === 0) {
             listElement.innerHTML = '<li style="color: #999; font-size: 14px;">暂无收藏的组合。</li>';
@@ -298,7 +306,7 @@
         let combinations = loadCombinations();
         if (index >= 0 && index < combinations.length) {
             combinations.splice(index, 1); 
-            saveCombinations(combinations);
+            saveCombinations(combinations); // 👈 删除后重新保存到 localStorage
             renderCombinations();
         }
     }
@@ -310,8 +318,11 @@
         let content = "";
         CATEGORIES.forEach(id => {
             const textarea = document.getElementById(id);
-            content += `== ${id} ==\n`;
-            content += textarea.value.trim() + "\n\n";
+            // 排除收藏夹键，只保存分类数据
+            if (id !== COMBINATIONS_KEY) { 
+                content += `== ${id} ==\n`;
+                content += textarea.value.trim() + "\n\n";
+            }
         });
 
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -390,9 +401,10 @@
             allParts.push(clothingPrompt);
         }
         
-        // ⭐️ 更改：新的发型选择逻辑 (前发 + 后发 或 完整发型)
+        // 3. ⭐️ 新的发型选择逻辑 (前发 + 后发 或 完整发型)
         let hairstylePrompt = "";
-        const useFullHairstyle = Math.random() < 0.5; // 50% 的几率选择完整发型
+        // 50% 的几率选择完整发型，50% 几率选择前发+后发
+        const useFullHairstyle = Math.random() < 0.5; 
 
         if (useFullHairstyle) {
             // 选项 1: 完整发型
@@ -408,10 +420,9 @@
         if (hairstylePrompt) {
             allParts.push(hairstylePrompt);
         }
-        // ⭐️ 更改：发型选择逻辑结束
+        // ⭐️ 发型选择逻辑结束
 
-        // 3. 剩余配饰和设置
-        // ⚠️ 注意：这里移除了原来的 "发型" 字段
+        // 4. 剩余配饰和设置
         const accessoryCategories = ["身体配饰", "发色", "姿势", "镜头"]; 
         accessoryCategories.forEach(id => {
             const prompt = selectRandomPrompt(id);
@@ -424,6 +435,7 @@
         document.getElementById("output-area").innerText = finalPrompt || "未生成任何提示词，请检查输入是否为空。";
     }
 
+    // 页面加载时执行
     window.onload = loadData;
 </script>
 
