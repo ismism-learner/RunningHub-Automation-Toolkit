@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>提示词随机组合器 - 收藏版</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            padding: 20px;
+            color: #333;
+        }
+        .main-layout {
+            display: flex;
+            max-width: 1300px; 
+            margin: 0 auto;
+            gap: 20px;
+        }
+        .container {
+            flex: 3; 
+            min-width: 600px;
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        .sidebar {
+            flex: 1; 
+            min-width: 300px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .sidebar-header h2 {
+            margin: 0;
+            color: #1e88e5;
+        }
+        /* 加号按钮样式 */
+        .btn-add-combination {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-add-combination:hover {
+            background-color: #45a049;
+        }
+        /* 列表样式 */
+        #combination-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 70vh; 
+            overflow-y: auto; 
+        }
+        .combination-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .combination-item:hover {
+            background-color: #f5f5f5;
+        }
+        .item-name {
+            font-weight: bold;
+            color: #333;
+            flex-grow: 1;
+            padding-right: 10px;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis; 
+        }
+        .item-delete {
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .item-delete:hover {
+            opacity: 1;
+        }
+        
+        /* 按钮和输出样式 */
+        h1 { text-align: center; color: #1e88e5; margin-bottom: 30px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        .input-group textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; resize: vertical; box-sizing: border-box; font-size: 14px; }
+        .btn { display: block; width: 100%; padding: 12px; color: white; border: none; border-radius: 6px; font-size: 18px; cursor: pointer; transition: background-color 0.3s; box-sizing: border-box; text-align: center; }
+        .btn-generate { background-color: #4caf50; }
+        .btn-generate:hover { background-color: #45a049; }
+        .btn-save { background-color: #ff9800; }
+        .btn-save:hover { background-color: #fb8c00; }
+        .btn-load { background-color: #2196f3; }
+        .btn-load:hover { background-color: #1e88e5; }
+        
+        #output-area { flex: 1; padding: 15px; border: 2px solid #1e88e5; border-radius: 6px; background-color: #e3f2fd; word-break: break-all; font-size: 16px; font-weight: 500; }
+        .note { margin-top: 20px; text-align: center; color: #888; font-size: 12px; }
+        .button-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        #file-input-label { flex: 1; cursor: pointer; }
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="main-layout">
+    <div class="container">
+        <h1>🎨 提示词随机组合器</h1>
+        <p>将每组提示词粘贴在对应的文本框中，每行一个提示词。数据将自动保存在浏览器中。</p>
+        
+        <div class="grid">
+            <div class="input-group"><label for="不修改的">1. 不修改的提示词 (基底)</label><textarea id="不修改的"></textarea></div>
+            <div class="input-group"><label for="套装">2. 套装</label><textarea id="套装"></textarea></div>
+            <div class="input-group"><label for="上装">3. 上装</label><textarea id="上装"></textarea></div>
+            <div class="input-group"><label for="下装">4. 下装</label><textarea id="下装"></textarea></div>
+            <div class="input-group"><label for="身体配饰">5. 身体配饰</label><textarea id="身体配饰"></textarea></div>
+            <div class="input-group"><label for="前发">6a. 前发</label><textarea id="前发"></textarea></div>
+            <div class="input-group"><label for="后发">6b. 后发</label><textarea id="后发"></textarea></div>
+            <div class="input-group"><label for="完整发型">6c. 完整发型</label><textarea id="完整发型"></textarea></div>
+            <div class="input-group"><label for="发色">7. 发色</label><textarea id="发色"></textarea></div>
+            <div class="input-group"><label for="姿势">8. 姿势</label><textarea id="姿势"></textarea></div>
+            <div class="input-group"><label for="镜头">9. 镜头</label><textarea id="镜头"></textarea></div>
+        </div>
+
+        <div class="button-group">
+            <label for="file-input" id="file-input-label">
+                <div class="btn btn-load">📤 加载分类提示词 (.txt)</div>
+                <input type="file" id="file-input" accept=".txt" onchange="loadFromTXT(event)">
+            </label>
+            <button onclick="saveToTXT()" class="btn btn-save" style="flex: 1;">💾 保存分类提示词 (.txt)</button>
+        </div>
+
+        <button onclick="generatePrompt()" class="btn btn-generate">生成组合提示词</button>
+
+        <div style="margin-top: 30px; display: flex;">
+            <div id="output-area" style="flex: 1;">点击“生成组合提示词”按钮...</div>
+        </div>
+
+        <div class="note">
+            注意：服装部分会随机选择 "套装" 或 "上装 + 下装"。<br>
+            **发型部分会随机选择 "前发 + 后发" 或 "完整发型"**。<br>
+            所有输入内容会自动保存在您浏览器的本地存储 (Local Storage) 中。
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>组合收藏夹</h2>
+            <button onclick="promptAndSaveCombination()" class="btn-add-combination" title="手动添加新组合">+</button>
+        </div>
+        <p style="font-size: 12px; color: #888;">点击列表项可复制内容</p>
+        <ul id="combination-list">
+            </ul>
+    </div>
+</div>
+
+<script>
+    // ⭐️ 更改：更新 CATEGORIES 列表以包含新的发型分类
+    const CATEGORIES = [
+        "不修改的", "套装", "上装", "下装", "身体配饰", 
+        "前发", "后发", "完整发型", // 新的发型分类
+        "发色", "姿势", "镜头"
+    ];
+    const COMBINATIONS_KEY = "prompt_combinations"; 
+
+    function loadData() {
+        CATEGORIES.forEach(id => {
+            const data = localStorage.getItem(`prompt_${id}`);
+            if (data) {
+                document.getElementById(id).value = data;
+            }
+        });
+        renderCombinations();
+    }
+
+    function saveData() {
+        CATEGORIES.forEach(id => {
+            const textarea = document.getElementById(id);
+            localStorage.setItem(`prompt_${id}`, textarea.value);
+        });
+    }
+    
+    function selectRandomPrompt(id) {
+        const text = document.getElementById(id).value;
+        const prompts = text.split('\n')
+                            .map(p => p.trim())
+                            .filter(p => p.length > 0);
+        
+        return prompts.length > 0 ? prompts[Math.floor(Math.random() * prompts.length)] : "";
+    }
+
+    function loadCombinations() {
+        const data = localStorage.getItem(COMBINATIONS_KEY);
+        return data ? JSON.parse(data) : [];
+    }
+
+    function saveCombinations(combinations) {
+        localStorage.setItem(COMBINATIONS_KEY, JSON.stringify(combinations));
+    }
+
+    // 提示用户输入提示词和命名
+    function promptAndSaveCombination() {
+        const defaultName = `组合 #${Date.now() % 10000}`;
+        
+        // 使用 prompt() 弹窗要求用户输入提示词，并尝试预填当前输出区的内容
+        const promptText = prompt("请输入您想收藏的组合提示词:", document.getElementById("output-area").innerText.trim());
+
+        if (promptText === null || !promptText.trim()) {
+            return; 
+        }
+
+        // 提示用户输入名称
+        const name = prompt("请为此组合命名：", defaultName);
+
+        if (name) {
+            const combinations = loadCombinations();
+            combinations.push({ 
+                name: name.trim() || defaultName, 
+                prompt: promptText.trim() 
+            });
+            saveCombinations(combinations);
+            renderCombinations();
+            alert(`组合 "${name.trim()}" 已成功收藏!`);
+        }
+    }
+
+    function renderCombinations() {
+        const listElement = document.getElementById("combination-list");
+        listElement.innerHTML = ''; 
+        const combinations = loadCombinations();
+
+        if (combinations.length === 0) {
+            listElement.innerHTML = '<li style="color: #999; font-size: 14px;">暂无收藏的组合。</li>';
+            return;
+        }
+
+        combinations.forEach((item, index) => {
+            const li = document.createElement('li');
+            li.className = 'combination-item';
+            li.title = item.prompt; 
+            li.innerHTML = `
+                <span class="item-name">${item.name}</span>
+                <button class="item-delete" data-index="${index}">删除</button>
+            `;
+
+            li.onclick = (e) => {
+                if (e.target.className.includes('item-delete')) return; 
+
+                navigator.clipboard.writeText(item.prompt).then(() => {
+                    alert(`组合 "${item.name}" 已复制到剪贴板！`);
+                }).catch(err => {
+                    console.error('复制失败:', err);
+                    alert('复制失败，请手动复制：\n' + item.prompt);
+                });
+            };
+
+            const deleteButton = li.querySelector('.item-delete');
+            deleteButton.onclick = (e) => {
+                e.stopPropagation(); 
+                if (confirm(`确定要删除组合 "${item.name}" 吗？`)) {
+                    deleteCombination(index);
+                }
+            };
+            
+            listElement.appendChild(li);
+        });
+    }
+
+    function deleteCombination(index) {
+        let combinations = loadCombinations();
+        if (index >= 0 && index < combinations.length) {
+            combinations.splice(index, 1); 
+            saveCombinations(combinations);
+            renderCombinations();
+        }
+    }
+
+
+    function saveToTXT() {
+        saveData(); 
+
+        let content = "";
+        CATEGORIES.forEach(id => {
+            const textarea = document.getElementById(id);
+            content += `== ${id} ==\n`;
+            content += textarea.value.trim() + "\n\n";
+        });
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = '提示词_分类备份.txt';
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        alert("已将所有分类提示词保存到 '提示词_分类备份.txt' 文件。");
+    }
+
+    function loadFromTXT(event) {
+        const file = event.target.files[0];
+        if (!file) { return; }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const lines = text.split('\n');
+            let currentCategory = null;
+            const categoryContents = {};
+
+            CATEGORIES.forEach(id => { categoryContents[id] = []; });
+
+            lines.forEach(line => {
+                const trimmedLine = line.trim();
+                const match = trimmedLine.match(/^== (.*?) ==$/); 
+
+                if (match) {
+                    const categoryName = match[1];
+                    currentCategory = CATEGORIES.includes(categoryName) ? categoryName : null;
+                } else if (currentCategory && trimmedLine) {
+                    categoryContents[currentCategory].push(trimmedLine);
+                }
+            });
+
+            CATEGORIES.forEach(id => {
+                document.getElementById(id).value = categoryContents[id].join('\n');
+            });
+
+            saveData(); 
+            alert("已成功从文件加载分类提示词！");
+            event.target.value = ''; 
+        };
+
+        reader.readAsText(file);
+    }
+
+    function generatePrompt() {
+        saveData();
+
+        const allParts = [];
+        // 1. 不修改的提示词 (基底)
+        const immutable = selectRandomPrompt("不修改的");
+        if (immutable) {
+            allParts.push(immutable);
+        }
+
+        // 2. 服装部分 (套装 或 上装 + 下装)
+        let clothingPrompt = "";
+        const selectSet = Math.random() < 0.5;
+
+        if (selectSet) {
+            clothingPrompt = selectRandomPrompt("套装");
+        } else {
+            const top = selectRandomPrompt("上装");
+            const bottom = selectRandomPrompt("下装");
+            const tempParts = [top, bottom].filter(p => p);
+            clothingPrompt = tempParts.join(", ");
+        }
+
+        if (clothingPrompt) {
+            allParts.push(clothingPrompt);
+        }
+        
+        // ⭐️ 更改：新的发型选择逻辑 (前发 + 后发 或 完整发型)
+        let hairstylePrompt = "";
+        const useFullHairstyle = Math.random() < 0.5; // 50% 的几率选择完整发型
+
+        if (useFullHairstyle) {
+            // 选项 1: 完整发型
+            hairstylePrompt = selectRandomPrompt("完整发型");
+        } else {
+            // 选项 2: 前发 + 后发
+            const front = selectRandomPrompt("前发");
+            const back = selectRandomPrompt("后发");
+            const tempParts = [front, back].filter(p => p);
+            hairstylePrompt = tempParts.join(", ");
+        }
+
+        if (hairstylePrompt) {
+            allParts.push(hairstylePrompt);
+        }
+        // ⭐️ 更改：发型选择逻辑结束
+
+        // 3. 剩余配饰和设置
+        // ⚠️ 注意：这里移除了原来的 "发型" 字段
+        const accessoryCategories = ["身体配饰", "发色", "姿势", "镜头"]; 
+        accessoryCategories.forEach(id => {
+            const prompt = selectRandomPrompt(id);
+            if (prompt) {
+                allParts.push(prompt);
+            }
+        });
+
+        const finalPrompt = allParts.join(", ");
+        document.getElementById("output-area").innerText = finalPrompt || "未生成任何提示词，请检查输入是否为空。";
+    }
+
+    window.onload = loadData;
+</script>
+
+</body>
+</html>
