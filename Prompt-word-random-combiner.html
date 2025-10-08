@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>提示词随机组合器 - 收藏版</title>
+    <title>提示词随机组合器 - 收藏版 (增强版)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -69,8 +69,9 @@
             list-style: none;
             padding: 0;
             margin: 0;
-            max-height: 70vh; 
+            max-height: 50vh; /* 调整高度以容纳新区域 */
             overflow-y: auto; 
+            margin-bottom: 20px;
         }
         .combination-item {
             display: flex;
@@ -128,6 +129,53 @@
         .button-group { display: flex; gap: 10px; margin-bottom: 20px; }
         #file-input-label { flex: 1; cursor: pointer; }
         #file-input { display: none; }
+
+        /* 批量生成区域样式 */
+        .batch-area {
+            border-top: 2px solid #e0e0e0;
+            padding-top: 15px;
+            margin-top: 15px;
+        }
+        .batch-area h3 {
+            margin-top: 0;
+            color: #00bcd4;
+        }
+        .batch-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .batch-input-group label {
+            font-weight: bold;
+            color: #555;
+            white-space: nowrap;
+        }
+        .batch-input-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            text-align: center;
+            /* ⭐️ 核心CSS修改：隐藏 type="number" 的上下箭头 */
+            -moz-appearance: textfield; /* Firefox */
+        }
+        /* Webkit (Chrome, Safari, Edge) */
+        .batch-input-group input::-webkit-outer-spin-button,
+        .batch-input-group input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .btn-batch-generate {
+            background-color: #00bcd4; /* 青色 */
+            font-size: 16px;
+            padding: 10px;
+        }
+        .btn-batch-generate:hover {
+            background-color: #00acc1;
+        }
     </style>
 </head>
 <body>
@@ -183,17 +231,35 @@
         </div>
         <p style="font-size: 12px; color: #888;">点击列表项可复制内容</p>
         <ul id="combination-list">
-            </ul>
-    </div>
+        </ul>
+        
+        <div class="batch-area">
+            <h3>🚀 批量生成器</h3>
+            <div class="batch-input-group">
+                <label for="batch-count">生成数量:</label>
+                <input type="number" id="batch-count" value="10" min="1" max="1000" oninput="validateNumberInput(this)">
+            </div>
+            <button onclick="batchGenerateAndSaveToTXT()" class="btn btn-batch-generate">批量生成并保存为TXT</button>
+        </div>
+        </div>
 </div>
 
 <script>
-    // ⭐️ 更改：更新 CATEGORIES 列表，添加 "表情"
+    // ⭐️ JS 新增功能：用于确保输入框只包含数字
+    function validateNumberInput(input) {
+        // 移除所有非数字字符
+        input.value = input.value.replace(/[^0-9]/g, '');
+        // 确保值不为空且大于0
+        if (input.value === '' || parseInt(input.value, 10) === 0) {
+            input.value = 1; // 默认设置为1
+        }
+    }
+
     const CATEGORIES = [
         "不修改的", "套装", "上装", "下装", "身体配饰", 
         "前发", "后发", "完整发型",
         "发色", 
-        "表情", // 新增的类别
+        "表情", 
         "姿势", "镜头"
     ];
     const COMBINATIONS_KEY = "prompt_combinations"; 
@@ -373,9 +439,14 @@
 
         reader.readAsText(file);
     }
-
-    function generatePrompt() {
-        saveData();
+    
+    /**
+     * 核心组合逻辑，现在作为一个独立函数，可以被单次和批量生成调用
+     * @returns {string} 生成的组合提示词
+     */
+    function generateSinglePrompt() {
+        // 确保所有数据已保存，供 selectRandomPrompt 使用最新的输入
+        saveData(); 
 
         const allParts = [];
         // 1. 不修改的提示词 (基底)
@@ -428,7 +499,12 @@
             }
         });
 
-        const finalPrompt = allParts.join(", ");
+        return allParts.join(", ");
+    }
+    
+    // 单次生成并复制的函数
+    function generatePrompt() {
+        const finalPrompt = generateSinglePrompt();
         const outputArea = document.getElementById("output-area");
         outputArea.innerText = finalPrompt || "未生成任何提示词，请检查输入是否为空。";
 
@@ -441,6 +517,56 @@
                 alert('复制失败，请手动复制：\n' + finalPrompt);
             });
         }
+    }
+
+    // 批量生成并保存为TXT的函数
+    function batchGenerateAndSaveToTXT() {
+        saveData(); // 确保使用最新的输入数据
+
+        const countInput = document.getElementById("batch-count");
+        let count = parseInt(countInput.value, 10);
+        const MAX_COUNT = 1000;
+
+        if (isNaN(count) || count <= 0) {
+            alert("请输入一个有效的生成数量 (大于 0)。");
+            countInput.value = 1; // 恢复默认值
+            return;
+        }
+
+        if (count > MAX_COUNT) {
+            if (!confirm(`您输入的数量 ${count} 超过建议最大数量 ${MAX_COUNT}。确定要继续吗?`)) {
+                countInput.value = MAX_COUNT;
+                return;
+            }
+        }
+        
+        let batchContent = `\n`;
+        const separator = "=== 组合提示词 - NO. "; 
+
+        for (let i = 1; i <= count; i++) {
+            const prompt = generateSinglePrompt();
+            batchContent += `${separator}${i} ===\n`; 
+            batchContent += prompt + "\n\n";
+        }
+        
+        // 移除末尾多余的换行
+        batchContent = batchContent.trim();
+
+        if (!batchContent) {
+            alert("未能生成任何提示词，请检查至少有一个分类有输入内容。");
+            return;
+        }
+
+        const blob = new Blob([batchContent], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `批量提示词组合_${count}组.txt`;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        alert(`✅ 已成功批量生成 ${count} 组提示词并保存到 '批量提示词组合_${count}组.txt' 文件。`);
     }
 
     window.onload = loadData;
