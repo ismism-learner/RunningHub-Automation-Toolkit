@@ -50,9 +50,10 @@
 ### 3️⃣ 使用方法
 
 1. 打开 [https://www.runninghub.cn/](https://www.runninghub.cn/)
-2. 登录账号并进入有以下侧栏的网页：<img width="392" height="873" alt="图片" src="https://github.com/user-attachments/assets/a9b5c57d-3b63-4878-906b-d8b8eca54421" />
-3. 脚本会自动在页面上添加一个下载面板或按钮。
-4. 点击 **“一键下载”** 即可自动批量下载所有结果文件。
+2. 登录账号并进入有以下侧栏的网页：
+   <img width="392" height="873" alt="图片" src="https://github.com/user-attachments/assets/a9b5c57d-3b63-4878-906b-d8b8eca54421" />
+4. 脚本会自动在页面上添加一个下载面板或按钮。
+5. 点击 **“一键下载”** 即可自动批量下载所有结果文件。
 
 ---
 
