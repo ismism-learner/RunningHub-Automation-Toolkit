@@ -69,7 +69,7 @@
             list-style: none;
             padding: 0;
             margin: 0;
-            max-height: 50vh; /* 调整高度以容纳新区域 */
+            max-height: 50vh; 
             overflow-y: auto; 
             margin-bottom: 20px;
         }
@@ -112,7 +112,6 @@
         
         /* 按钮和输出样式 */
         h1 { text-align: center; color: #1e88e5; margin-bottom: 30px; }
-        /* 调整网格布局以容纳 10 个栏位 */
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; } 
         .input-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
         .input-group textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; resize: vertical; box-sizing: border-box; font-size: 14px; }
@@ -158,7 +157,7 @@
             border-radius: 6px;
             box-sizing: border-box;
             text-align: center;
-            /* ⭐️ 核心CSS修改：隐藏 type="number" 的上下箭头 */
+            /* 核心CSS修改：隐藏 type="number" 的上下箭头 */
             -moz-appearance: textfield; /* Firefox */
         }
         /* Webkit (Chrome, Safari, Edge) */
@@ -167,7 +166,6 @@
             -webkit-appearance: none;
             margin: 0;
         }
-
         .btn-batch-generate {
             background-color: #00bcd4; /* 青色 */
             font-size: 16px;
@@ -176,6 +174,40 @@
         .btn-batch-generate:hover {
             background-color: #00acc1;
         }
+
+        /* 错误/通知窗口样式 */
+        #notification-box {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background-color: #333;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            max-width: 80%;
+            font-size: 14px;
+            pointer-events: none; /* 允许点击穿透 */
+        }
+        #notification-box.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        #notification-box.error {
+            background-color: #f44336; /* 红色 */
+        }
+        #notification-box.success {
+            background-color: #4CAF50; /* 绿色 */
+        }
+        #notification-box.info {
+            background-color: #2196F3; /* 蓝色 */
+        }
+
+        /* ⭐️ 移除自定义确认模态框样式，保留 prompt 样式*/
     </style>
 </head>
 <body>
@@ -205,10 +237,10 @@
 
         <div class="button-group">
             <label for="file-input" id="file-input-label">
-                <div class="btn btn-load">📤 加载分类提示词 (.txt)</div>
+                <div class="btn btn-load">📤 加载分类提示词和收藏 (.txt)</div>
                 <input type="file" id="file-input" accept=".txt" onchange="loadFromTXT(event)">
             </label>
-            <button onclick="saveToTXT()" class="btn btn-save" style="flex: 1;">💾 保存分类提示词 (.txt)</button>
+            <button onclick="saveToTXT()" class="btn btn-save" style="flex: 1;">💾 保存分类提示词和收藏 (.txt)</button>
         </div>
 
         <button onclick="generatePrompt()" class="btn btn-generate">生成组合提示词并复制</button>
@@ -244,14 +276,28 @@
         </div>
 </div>
 
+<div id="notification-box"></div>
+
 <script>
-    // ⭐️ JS 新增功能：用于确保输入框只包含数字
+    /**
+     * 自定义通知函数 (取代 alert/confirm)
+     */
+    function notify(message, type = 'info', duration = 3000) {
+        const box = document.getElementById('notification-box');
+        box.innerText = message;
+        box.className = `show ${type}`; 
+
+        clearTimeout(box.timer);
+        box.timer = setTimeout(() => {
+            box.className = '';
+        }, duration);
+    }
+    
+    // 确保输入框只包含数字
     function validateNumberInput(input) {
-        // 移除所有非数字字符
         input.value = input.value.replace(/[^0-9]/g, '');
-        // 确保值不为空且大于0
         if (input.value === '' || parseInt(input.value, 10) === 0) {
-            input.value = 1; // 默认设置为1
+            input.value = 1;
         }
     }
 
@@ -304,6 +350,7 @@
         localStorage.setItem(COMBINATIONS_KEY, JSON.stringify(combinations));
     }
 
+    // 保持使用 prompt 收集输入，因为这是获取用户输入文本的最简洁方式
     function promptAndSaveCombination() {
         const defaultName = `组合 #${Date.now() % 10000}`;
         
@@ -317,13 +364,14 @@
 
         if (name) {
             const combinations = loadCombinations();
+            const finalName = name.trim() || defaultName;
             combinations.push({ 
-                name: name.trim() || defaultName, 
+                name: finalName, 
                 prompt: promptText.trim() 
             });
             saveCombinations(combinations);
             renderCombinations();
-            alert(`组合 "${name.trim()}" 已成功收藏!`);
+            notify(`组合 "${finalName}" 已成功收藏！`, 'success', 2000);
         }
     }
 
@@ -350,19 +398,19 @@
                 if (e.target.className.includes('item-delete')) return; 
 
                 navigator.clipboard.writeText(item.prompt).then(() => {
-                    alert(`组合 "${item.name}" 已复制到剪贴板！`);
+                    notify(`✅ 组合 "${item.name}" 已复制到剪贴板！`, 'success', 2000);
                 }).catch(err => {
                     console.error('复制失败:', err);
-                    alert('复制失败，请手动复制：\n' + item.prompt);
+                    notify('复制失败，请手动复制！', 'error', 4000);
                 });
             };
 
             const deleteButton = li.querySelector('.item-delete');
             deleteButton.onclick = (e) => {
                 e.stopPropagation(); 
-                if (confirm(`确定要删除组合 "${item.name}" 吗？`)) {
-                    deleteCombination(index);
-                }
+                // ⭐️ 修改：移除所有确认，一键删除
+                deleteCombination(index);
+                notify(`组合 "${item.name}" 已删除。`, 'info', 2000);
             };
             
             listElement.appendChild(li);
@@ -378,31 +426,59 @@
         }
     }
 
-
+    /**
+     * 保存所有分类提示词和组合收藏夹到TXT文件
+     */
     function saveToTXT() {
         saveData(); 
 
         let content = "";
+        let hasContent = false;
+
+        // 1. 保存分类提示词
         CATEGORIES.forEach(id => {
             const textarea = document.getElementById(id);
-            if (id !== COMBINATIONS_KEY) { 
-                content += `== ${id} ==\n`;
+            if (textarea.value.trim().length > 0) {
+                content += `== 分类提示词: ${id} ==\n`;
                 content += textarea.value.trim() + "\n\n";
+                hasContent = true;
             }
         });
+        
+        // 2. 保存组合收藏夹内容
+        const combinations = loadCombinations();
+        if (combinations.length > 0) {
+            content += "\n\n================================\n";
+            content += "== 组合收藏夹 (COLLECTION) ==\n";
+            content += "================================\n\n";
+
+            combinations.forEach((item, index) => {
+                content += `[收藏组合 NO.${index + 1} - 名称: ${item.name}]\n`;
+                content += item.prompt + "\n\n";
+            });
+            hasContent = true;
+        }
+
+        if (!hasContent) {
+            notify('没有内容可以保存。请在分类文本框或收藏夹中输入内容。', 'error', 3000);
+            return;
+        }
 
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = '提示词_分类备份.txt';
+        a.download = '提示词_备份_分类和收藏.txt'; 
         
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
 
-        alert("已将所有分类提示词保存到 '提示词_分类备份.txt' 文件。");
+        notify('✅ 分类和收藏已保存到 TXT 文件。', 'success', 3000);
     }
 
+    /**
+     * 提取功能：从TXT文件加载分类提示词和组合收藏夹
+     */
     function loadFromTXT(event) {
         const file = event.target.files[0];
         if (!file) { return; }
@@ -413,49 +489,93 @@
             const lines = text.split('\n');
             let currentCategory = null;
             const categoryContents = {};
+            let inCombinationsArea = false; 
+            let newCombinations = []; 
+            let currentCombination = null; 
+            let loadedCategoryCount = 0;
+            let loadedCombinationCount = 0;
 
             CATEGORIES.forEach(id => { categoryContents[id] = []; });
 
             lines.forEach(line => {
                 const trimmedLine = line.trim();
-                const match = trimmedLine.match(/^== (.*?) ==$/); 
+                const categoryMatch = trimmedLine.match(/^== 分类提示词: (.*?) ==$/); 
+                const combinationStartMatch = trimmedLine.match(/^\[收藏组合 NO.\d+ - 名称: (.*?)\]$/); 
+                const combinationAreaMatch = trimmedLine.match(/^== 组合收藏夹 \(COLLECTION\) ==$/);
 
-                if (match) {
-                    const categoryName = match[1];
-                    currentCategory = CATEGORIES.includes(categoryName) ? categoryName : null;
+                if (combinationAreaMatch) {
+                    inCombinationsArea = true;
+                    currentCategory = null;
+                    return;
+                }
+
+                if (categoryMatch) {
+                    currentCategory = CATEGORIES.includes(categoryMatch[1]) ? categoryMatch[1] : null;
+                    inCombinationsArea = false;
+                    currentCombination = null;
+                    loadedCategoryCount++;
+                    return;
+                } 
+                
+                if (inCombinationsArea) {
+                    if (combinationStartMatch) {
+                        if (currentCombination && currentCombination.prompt.trim()) {
+                            newCombinations.push(currentCombination);
+                            loadedCombinationCount++;
+                        }
+                        currentCombination = { 
+                            name: combinationStartMatch[1], 
+                            prompt: "" 
+                        };
+                    } else if (currentCombination && trimmedLine) {
+                        currentCombination.prompt += (currentCombination.prompt.length > 0 ? "\n" : "") + trimmedLine;
+                    }
                 } else if (currentCategory && trimmedLine) {
                     categoryContents[currentCategory].push(trimmedLine);
                 }
             });
 
+            if (currentCombination && currentCombination.prompt.trim()) {
+                newCombinations.push(currentCombination);
+                loadedCombinationCount++;
+            }
+
+            // 1. 加载分类内容
             CATEGORIES.forEach(id => {
                 document.getElementById(id).value = categoryContents[id].join('\n');
             });
-
             saveData(); 
-            alert("已成功从文件加载分类提示词！");
+
+            // 2. 加载组合收藏夹内容 (追加模式)
+            if (newCombinations.length > 0) {
+                let existingCombinations = loadCombinations();
+                existingCombinations.push(...newCombinations);
+                saveCombinations(existingCombinations);
+                renderCombinations();
+            }
+            
+            // 最终通知
+            if (loadedCategoryCount > 0 || loadedCombinationCount > 0) {
+                notify(`✅ 文件读取完成，已更新 ${loadedCategoryCount} 个分类和导入 ${loadedCombinationCount} 个收藏组合。`, 'success', 4000);
+            } else {
+                 notify('⚠️ 文件中未检测到分类或收藏组合内容。', 'info', 3000);
+            }
             event.target.value = ''; 
         };
 
         reader.readAsText(file);
     }
     
-    /**
-     * 核心组合逻辑，现在作为一个独立函数，可以被单次和批量生成调用
-     * @returns {string} 生成的组合提示词
-     */
+    // 核心组合逻辑 (保持不变)
     function generateSinglePrompt() {
-        // 确保所有数据已保存，供 selectRandomPrompt 使用最新的输入
         saveData(); 
 
         const allParts = [];
-        // 1. 不修改的提示词 (基底)
         const immutable = selectRandomPrompt("不修改的");
         if (immutable) {
             allParts.push(immutable);
         }
 
-        // 2. 服装部分 (套装 或 上装 + 下装)
         let clothingPrompt = "";
         const selectSet = Math.random() < 0.5;
 
@@ -472,7 +592,6 @@
             allParts.push(clothingPrompt);
         }
         
-        // 3. 发型选择逻辑 (前发 + 后发 或 完整发型)
         let hairstylePrompt = "";
         const useFullHairstyle = Math.random() < 0.5;
 
@@ -489,8 +608,6 @@
             allParts.push(hairstylePrompt);
         }
 
-        // 4. 剩余配饰和设置 (包含新增的表情)
-        // 注意顺序：身体配饰, 发色, 表情, 姿势, 镜头
         const accessoryCategories = ["身体配饰", "发色", "表情", "姿势", "镜头"]; 
         accessoryCategories.forEach(id => {
             const prompt = selectRandomPrompt(id);
@@ -508,36 +625,33 @@
         const outputArea = document.getElementById("output-area");
         outputArea.innerText = finalPrompt || "未生成任何提示词，请检查输入是否为空。";
 
-        // 自动复制到剪贴板
         if (finalPrompt) {
             navigator.clipboard.writeText(finalPrompt).then(() => {
-                alert("✅ 提示词已成功生成并复制到剪贴板！");
+                notify("✅ 提示词已复制到剪贴板！", 'success', 2000);
             }).catch(err => {
                 console.error('复制失败:', err);
-                alert('复制失败，请手动复制：\n' + finalPrompt);
+                notify('复制失败，请手动复制！', 'error', 4000);
             });
         }
     }
 
     // 批量生成并保存为TXT的函数
     function batchGenerateAndSaveToTXT() {
-        saveData(); // 确保使用最新的输入数据
+        saveData(); 
 
         const countInput = document.getElementById("batch-count");
         let count = parseInt(countInput.value, 10);
         const MAX_COUNT = 1000;
 
         if (isNaN(count) || count <= 0) {
-            alert("请输入一个有效的生成数量 (大于 0)。");
-            countInput.value = 1; // 恢复默认值
+            notify("请输入一个有效的生成数量 (大于 0)。", 'error', 3000);
+            countInput.value = 1; 
             return;
         }
 
         if (count > MAX_COUNT) {
-            if (!confirm(`您输入的数量 ${count} 超过建议最大数量 ${MAX_COUNT}。确定要继续吗?`)) {
-                countInput.value = MAX_COUNT;
-                return;
-            }
+            notify(`⚠️ 数量 ${count} 超过建议最大值 ${MAX_COUNT}。请手动修改。`, 'error', 4000);
+            return;
         }
         
         let batchContent = `\n`;
@@ -549,11 +663,10 @@
             batchContent += prompt + "\n\n";
         }
         
-        // 移除末尾多余的换行
         batchContent = batchContent.trim();
 
         if (!batchContent) {
-            alert("未能生成任何提示词，请检查至少有一个分类有输入内容。");
+            notify("未能生成任何提示词，请检查至少有一个分类有输入内容。", 'error', 3000);
             return;
         }
 
@@ -566,7 +679,7 @@
         a.click();
         document.body.removeChild(a);
 
-        alert(`✅ 已成功批量生成 ${count} 组提示词并保存到 '批量提示词组合_${count}组.txt' 文件。`);
+        notify(`✅ 已成功批量生成 ${count} 组提示词并保存。`, 'success', 3000);
     }
 
     window.onload = loadData;
