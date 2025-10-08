@@ -35,7 +35,7 @@
 
 ---
 
-### 🖼️ 2. 批量上传与任务执行脚本（runninghub batch uploader）
+### 🖼️ 2. 批量上传与任务执行脚本（Runninghub Batch Uploader）
 
 **文件名：** `runninghub batch uploader.py`
 
@@ -107,5 +107,7 @@ MIT License © 2025
 ## 🐔
 
 你也能够成为电商设计大师哦
+下面是我的注册邀请码，虽然这些工具都是给有高频需要的人用的，不过如果你是新手用户，还随手点了一下链接的话，我真感激不尽了。
+打开链接：https://www.runninghub.cn/?inviteCode=msiu6dkh 注册领500RH币可以免费生成好多图片视频哦！
 
 ---
