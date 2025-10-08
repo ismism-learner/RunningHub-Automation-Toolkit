@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>提示词随机组合器 - 收藏版 (增强版)</title>
+    <title>提示词随机组合器</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -206,8 +206,6 @@
         #notification-box.info {
             background-color: #2196F3; /* 蓝色 */
         }
-
-        /* ⭐️ 移除自定义确认模态框样式，保留 prompt 样式*/
     </style>
 </head>
 <body>
@@ -408,7 +406,7 @@
             const deleteButton = li.querySelector('.item-delete');
             deleteButton.onclick = (e) => {
                 e.stopPropagation(); 
-                // ⭐️ 修改：移除所有确认，一键删除
+                // ⭐️ 一键删除，用户需自负后果 (如您所愿)
                 deleteCombination(index);
                 notify(`组合 "${item.name}" 已删除。`, 'info', 2000);
             };
@@ -428,6 +426,7 @@
 
     /**
      * 保存所有分类提示词和组合收藏夹到TXT文件
+     * ⭐️ 只使用简洁格式保存: == id ==
      */
     function saveToTXT() {
         saveData(); 
@@ -435,11 +434,11 @@
         let content = "";
         let hasContent = false;
 
-        // 1. 保存分类提示词
+        // 1. 保存分类提示词 (简洁格式: == id ==)
         CATEGORIES.forEach(id => {
             const textarea = document.getElementById(id);
             if (textarea.value.trim().length > 0) {
-                content += `== 分类提示词: ${id} ==\n`;
+                content += `== ${id} ==\n`; // 简洁头部
                 content += textarea.value.trim() + "\n\n";
                 hasContent = true;
             }
@@ -478,6 +477,7 @@
 
     /**
      * 提取功能：从TXT文件加载分类提示词和组合收藏夹
+     * ⭐️ 只识别简洁格式: == id ==，以及组合收藏夹头部。
      */
     function loadFromTXT(event) {
         const file = event.target.files[0];
@@ -492,57 +492,82 @@
             let inCombinationsArea = false; 
             let newCombinations = []; 
             let currentCombination = null; 
-            let loadedCategoryCount = 0;
-            let loadedCombinationCount = 0;
+            let categoriesActuallyLoaded = 0; 
 
             CATEGORIES.forEach(id => { categoryContents[id] = []; });
 
             lines.forEach(line => {
                 const trimmedLine = line.trim();
-                const categoryMatch = trimmedLine.match(/^== 分类提示词: (.*?) ==$/); 
-                const combinationStartMatch = trimmedLine.match(/^\[收藏组合 NO.\d+ - 名称: (.*?)\]$/); 
-                const combinationAreaMatch = trimmedLine.match(/^== 组合收藏夹 \(COLLECTION\) ==$/);
+                if (trimmedLine.length === 0) return; 
 
+                const combinationAreaMatch = trimmedLine.match(/^== 组合收藏夹 \(COLLECTION\) ==$/);
+                const categoryMatch = trimmedLine.match(/^== (.*?) ==$/);  // ⭐️ 统一识别简洁格式
+                const combinationStartMatch = trimmedLine.match(/^\[收藏组合 NO.\d+ - 名称: (.*?)\]$/); 
+
+                // 1. 检测到组合收藏夹区域的开始
                 if (combinationAreaMatch) {
                     inCombinationsArea = true;
-                    currentCategory = null;
-                    return;
+                    currentCategory = null; 
+                    return; 
                 }
 
+                let categoryMatchResult = null;
                 if (categoryMatch) {
-                    currentCategory = CATEGORIES.includes(categoryMatch[1]) ? categoryMatch[1] : null;
-                    inCombinationsArea = false;
+                     // 排除匹配到分隔符（组合收藏夹，或纯分隔线）的情况
+                    const matchedContent = categoryMatch[1].trim();
+                    if (matchedContent !== '组合收藏夹 (COLLECTION)' && !matchedContent.includes('=')) {
+                        categoryMatchResult = matchedContent;
+                    }
+                }
+                
+                // 2. 检测到分类头部
+                if (categoryMatchResult) {
+                    const categoryId = categoryMatchResult.trim();
+                    if (CATEGORIES.includes(categoryId)) {
+                        currentCategory = categoryId;
+                    } else {
+                        currentCategory = null; // 非法的分类 ID，忽略该块内容
+                    }
+                    inCombinationsArea = false; 
                     currentCombination = null;
-                    loadedCategoryCount++;
-                    return;
+                    return; 
                 } 
                 
+                // 3. 处于组合收藏夹区域，处理组合项
                 if (inCombinationsArea) {
                     if (combinationStartMatch) {
+                        // 结束上一个组合，开始新的组合
                         if (currentCombination && currentCombination.prompt.trim()) {
                             newCombinations.push(currentCombination);
-                            loadedCombinationCount++;
                         }
                         currentCombination = { 
                             name: combinationStartMatch[1], 
                             prompt: "" 
                         };
-                    } else if (currentCombination && trimmedLine) {
+                    } else if (currentCombination) {
+                        // 积累组合的提示词内容
                         currentCombination.prompt += (currentCombination.prompt.length > 0 ? "\n" : "") + trimmedLine;
                     }
-                } else if (currentCategory && trimmedLine) {
+                } 
+                // 4. 处于分类提示词区域
+                else if (currentCategory) {
+                    // 积累分类提示词内容
                     categoryContents[currentCategory].push(trimmedLine);
                 }
             });
 
+            // 确保保存最后一个解析的组合
             if (currentCombination && currentCombination.prompt.trim()) {
                 newCombinations.push(currentCombination);
-                loadedCombinationCount++;
             }
 
             // 1. 加载分类内容
             CATEGORIES.forEach(id => {
-                document.getElementById(id).value = categoryContents[id].join('\n');
+                const contentLines = categoryContents[id];
+                document.getElementById(id).value = contentLines.join('\n');
+                if (contentLines.length > 0) {
+                    categoriesActuallyLoaded++; 
+                }
             });
             saveData(); 
 
@@ -554,13 +579,13 @@
                 renderCombinations();
             }
             
-            // 最终通知
-            if (loadedCategoryCount > 0 || loadedCombinationCount > 0) {
-                notify(`✅ 文件读取完成，已更新 ${loadedCategoryCount} 个分类和导入 ${loadedCombinationCount} 个收藏组合。`, 'success', 4000);
+            // 最终通知：基于实际加载的内容数量判断成功/失败
+            if (categoriesActuallyLoaded > 0 || newCombinations.length > 0) {
+                notify(`✅ 文件读取完成，已更新 ${categoriesActuallyLoaded} 个分类和导入 ${newCombinations.length} 个收藏组合。`, 'success', 4000);
             } else {
                  notify('⚠️ 文件中未检测到分类或收藏组合内容。', 'info', 3000);
             }
-            event.target.value = ''; 
+            event.target.value = ''; // 清空文件输入，允许再次选择同一文件
         };
 
         reader.readAsText(file);
