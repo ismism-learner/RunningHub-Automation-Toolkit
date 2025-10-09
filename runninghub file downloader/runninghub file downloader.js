@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         RunningHub 视频批量下载助手 (v4.3 最终精简版)
 // @namespace    http://tampermonkey.net/
-// @version      4.3
-// @description  批量下载RunningHub视频，无动画过渡，无确认弹窗，支持滚轮调整和详细失败报告。
-// @author       Gemini
+// @version      4.4
+// @description  批量下载RunningHub视频和zip文件，无动画过渡，无确认弹窗，支持滚轮调整和详细失败报告。
+// @author       Gemini & Jules
 // @match        https://www.runninghub.cn/ai-detail/*
 // @grant        GM_addStyle
 // @grant        unsafeWindow
@@ -22,7 +22,7 @@
     let initialized = false;
     let currentAllFiles = []; // 存储文件数据，内部使用 0-based 索引
 
-    // 1. 样式注入 (移除 transition 动画)
+    // 1. 样式注入 (保持不变)
     GM_addStyle(`
         #batch-download-control-panel {
             position: fixed;
@@ -36,8 +36,6 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
             width: 330px;
-            /* 移除动画过渡效果 */
-            /* transition: width 0.1s linear, height 0.1s linear, padding 0.1s linear, border-radius 0.1s linear; */
             pointer-events: auto;
         }
         #batch-download-control-panel.minimized {
@@ -70,8 +68,6 @@
             text-align: center;
             border-radius: 50%;
             cursor: pointer;
-            /* 移除按钮过渡效果 */
-            /* transition: background-color 0.2s; */
         }
         #collapse-button:hover {
             background-color: rgba(255, 255, 255, 0.1);
@@ -125,26 +121,6 @@
     `);
 
     // 2. 核心工具函数 (保持不变)
-    function findTimeStr(element) {
-        const timeRegex = /(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})/;
-        let current = element;
-        for (let i = 0; i < 5; i++) {
-            if (!current) break;
-            const textContent = current.textContent;
-            const match = textContent.match(timeRegex);
-            if (match) return match[1];
-            current = current.parentElement;
-        }
-        if (element.parentElement) {
-            for (const child of element.parentElement.children) {
-                 if (child === element) continue;
-                 const match = child.textContent.match(timeRegex);
-                 if (match) return match[1];
-            }
-        }
-        return null;
-    }
-
     function simulateMouseAction(element, eventType) {
         const event = new MouseEvent(eventType, {
             view: unsafeWindow,
@@ -160,7 +136,7 @@
         return Math.floor(Math.random() * (MAX_DOWNLOAD_DELAY_MS - MIN_DOWNLOAD_DELAY_MS + 1)) + MIN_DOWNLOAD_DELAY_MS;
     }
 
-    // 3. 下载文件核心逻辑 (保持不变)
+    // 3. 下载文件核心逻辑 (已修改：使用 element 属性)
     async function downloadFiles(indicesToProcess, isRetry) {
         let successfulCount = 0;
         let failedList = [];
@@ -168,18 +144,18 @@
 
         for (const index of indicesToProcess) {
             const fileData = currentAllFiles[index];
-            const icon = fileData.icon;
+            const element = fileData.element; // MODIFIED
             let downloadClicked = false;
 
-            if (!icon) {
-                console.error(`${isRetryText} 索引 ${index+1} 对应的文件未找到。`);
+            if (!element) {
+                console.error(`${isRetryText} 索引 ${index+1} 对应的文件元素未找到。`);
                 failedList.push(index);
                 continue;
             }
 
             console.log(`${isRetryText} [${index+1} / ${currentAllFiles.length}] 正在处理文件，时间: ${fileData.timeStr}...`);
 
-            simulateMouseAction(icon, 'mouseenter');
+            simulateMouseAction(element, 'mouseenter');
             await sleep(MENU_TRIGGER_WAIT_MS);
 
             try {
@@ -262,21 +238,35 @@
     }
 
 
-    // 5. UI 状态更新 (保持不变)
+    // 5. UI 状态更新 (已重构：基于 .history-item 结构)
     function updateUIState() {
-        const allIcons = document.querySelectorAll('span.anticon-ellipsis.ant-dropdown-trigger');
-        const newFiles = [];
+        const allFilesData = [];
+        const timeRegex = /(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})/;
 
-        Array.from(allIcons).forEach(icon => {
-            const timeStr = findTimeStr(icon);
-            newFiles.push({
-                icon: icon,
-                timeStr: timeStr || '时间未知',
-                time: timeStr ? new Date(timeStr.replace(/-/g, "/")) : null
-            });
+        const historyItems = document.querySelectorAll('.history-item');
+
+        historyItems.forEach(item => {
+            const ellipsisButton = item.querySelector('span.anticon-ellipsis');
+            const timeElement = item.querySelector('.history-create-time');
+
+            if (ellipsisButton && timeElement) {
+                const timeMatch = timeElement.textContent.match(timeRegex);
+                if (timeMatch) {
+                    const timeStr = timeMatch[0];
+                    allFilesData.push({
+                        element: ellipsisButton,
+                        timeStr: timeStr,
+                        time: new Date(timeStr.replace(/-/g, "/"))
+                    });
+                }
+            }
         });
 
-        currentAllFiles = newFiles;
+        // 按时间从早到晚统一排序
+        allFilesData.sort((a, b) => a.time - b.time);
+
+        // 更新全局变量和UI
+        currentAllFiles = allFilesData;
         const totalFiles = currentAllFiles.length;
 
         const totalCountP = document.getElementById('total-file-count');
@@ -304,8 +294,8 @@
     }
 
 
-    // 6. UI 初始化 (保持不变)
-    function initializeUI(initialIcons) {
+    // 6. UI 初始化 (已修改：不再接收参数)
+    function initializeUI() {
         if (initialized) return;
         initialized = true;
 
@@ -315,7 +305,7 @@
         panel.id = 'batch-download-control-panel';
         panel.innerHTML = `
             <div id="panel-header">
-                <h4>批量下载助手 (v4.3)</h4>
+                <h4>批量下载助手 (v4.4)</h4>
                 <button id="collapse-button" title="收缩/展开">-</button>
             </div>
 
@@ -398,13 +388,14 @@
              const startIndex0 = startIdx - 1;
              const endIndex0 = endIdx - 1;
 
-             const startTimeStr = currentAllFiles[startIndex0] ? currentAllFiles[startIndex0].timeStr : '--';
-             const endTimeStr = currentAllFiles[endIndex0] ? currentAllFiles[endIndex0].timeStr : '--';
+             const startTimeStr = (currentAllFiles[startIndex0] && startIndex0 < totalFiles) ? currentAllFiles[startIndex0].timeStr : '--';
+             const endTimeStr = (currentAllFiles[endIndex0] && endIndex0 < totalFiles) ? currentAllFiles[endIndex0].timeStr : '--';
+
 
              startTimeSpan.textContent = startTimeStr;
              endTimeSpan.textContent = endTimeStr;
 
-             const count = endIdx - startIdx + 1;
+             const count = (totalFiles > 0) ? (endIdx - startIdx + 1) : 0;
              downloadButton.textContent = `一键批量下载 (${count} 个文件)`;
         };
 
@@ -458,15 +449,17 @@
         });
     }
 
-    // 7. 持续检查元素是否加载完毕 (保持不变)
+    // 7. 持续检查元素是否加载完毕 (已重构：检查 .history-item)
     function checkAndInitialize() {
         if (initialized) {
              clearInterval(intervalId);
              return;
         }
-        const allIcons = document.querySelectorAll('span.anticon-ellipsis.ant-dropdown-trigger');
-        if (allIcons.length > 0) {
-            initializeUI(allIcons);
+        // 检查 .history-item 元素是否存在
+        const historyItemsExist = document.querySelector('.history-item') !== null;
+
+        if (historyItemsExist) {
+            initializeUI();
         }
     }
 
@@ -475,7 +468,7 @@
     setTimeout(() => {
         if (!initialized) {
             clearInterval(intervalId);
-            console.warn("RunningHub 批量下载助手：超时，未找到下载图标。");
+            console.warn("RunningHub 批量下载助手：超时，未找到下载项目。");
         }
     }, 20000);
 })();
