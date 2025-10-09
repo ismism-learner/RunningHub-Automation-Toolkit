@@ -167,7 +167,8 @@ class APIRunnerApp:
         btn_frame.pack(fill="x", pady=5)
         ttk.Button(btn_frame, text="更改目录", command=self.change_directory).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="重新扫描文件", command=self.scan_files_and_update_status).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="📝 生成请求负载", command=self.generate_payloads).pack(side='left', padx=(20, 5))
+        self.generate_btn = ttk.Button(btn_frame, text="📝 生成请求负载", command=self.start_generate_payloads_thread)
+        self.generate_btn.pack(side='left', padx=(20, 5))
 
         self.scan_status_label = ttk.Label(scan_frame, text="文件扫描状态: 未运行")
         self.scan_status_label.pack(anchor="w", padx=5, pady=5)
@@ -266,8 +267,26 @@ class APIRunnerApp:
         return listbox, None
 
     def _build_log_display(self):
-        self.log_text = tk.Text(self.log_frame, height=6, state='disabled', wrap='word', font=("Consolas", 10))
-        self.log_text.pack(expand=True, fill="both", padx=5, pady=5)
+        """Builds the log display area with both vertical and horizontal scrollbars."""
+        log_container = ttk.Frame(self.log_frame)
+        log_container.pack(expand=True, fill='both', padx=5, pady=5)
+        log_container.grid_rowconfigure(0, weight=1)
+        log_container.grid_columnconfigure(0, weight=1)
+
+        v_scrollbar = ttk.Scrollbar(log_container, orient=tk.VERTICAL)
+        h_scrollbar = ttk.Scrollbar(log_container, orient=tk.HORIZONTAL)
+
+        self.log_text = tk.Text(log_container, height=8, state='disabled', wrap='none',
+                                font=("Consolas", 10),
+                                yscrollcommand=v_scrollbar.set,
+                                xscrollcommand=h_scrollbar.set)
+
+        v_scrollbar.config(command=self.log_text.yview)
+        h_scrollbar.config(command=self.log_text.xview)
+
+        self.log_text.grid(row=0, column=0, sticky='nsew')
+        v_scrollbar.grid(row=0, column=1, sticky='ns')
+        h_scrollbar.grid(row=1, column=0, sticky='ew')
 
         self.log_text.tag_config('INFO', foreground='black')
         self.log_text.tag_config('WARNING', foreground='orange')
@@ -479,112 +498,206 @@ class APIRunnerApp:
             target_var.set(filename)
             self.update_log_display(f"已为单个参数选择文件: {filename}", level='INFO')
 
+    def start_generate_payloads_thread(self):
+        """Starts the payload generation process in a separate thread to keep the UI responsive."""
+        thread = threading.Thread(target=self.generate_payloads, daemon=True)
+        thread.start()
+
     def generate_payloads(self):
         if not self.API_DATA:
             messagebox.showerror("错误", "请先加载 API 配置。")
             return
 
-        selected_images = sorted([self.image_listbox.get(i) for i in self.image_listbox.curselection()])
-        selected_videos = sorted([self.video_listbox.get(i) for i in self.video_listbox.curselection()])
-        selected_jsons = [self.json_listbox.get(i) for i in self.json_listbox.curselection()]
+        self.generate_btn.config(state='disabled')
+        self.run_btn.config(state='disabled')
 
-        self.extract_prompts_from_json(selected_jsons)
-        prompts = self.prompts
+        try:
+            self.update_log_display("--- 开始生成请求负载 ---", level='INFO')
 
-        N_img, N_vid, N_prompt = len(selected_images), len(selected_videos), len(prompts)
+            # 1. Get selected local filenames
+            selected_images_local = sorted([self.image_listbox.get(i) for i in self.image_listbox.curselection()])
+            selected_videos_local = sorted([self.video_listbox.get(i) for i in self.video_listbox.curselection()])
+            selected_jsons = [self.json_listbox.get(i) for i in self.json_listbox.curselection()]
 
-        text_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'text'), None)
-        image_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'image'), None)
-        video_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'video'), None)
+            # 2. Upload all required files first
+            self.update_log_display("开始上传所有必需的文件...", level='INFO')
 
-        current_mode = self.batch_mode_var.get()
+            uploaded_images = [self._upload_file_and_get_url(f) for f in selected_images_local]
+            uploaded_images = [url for url in uploaded_images if url]
 
-        if N_img > 1 and N_prompt > 1 and N_img == N_prompt: self.batch_mode_var.set("M4: 多图多提示词 1:1 顺序匹配")
-        elif N_img == 1 and N_prompt > 1: self.batch_mode_var.set("M6: 单图多提示词")
-        elif N_img > 1 and N_prompt == 0 and N_vid == 0: self.batch_mode_var.set("M8: 纯多图批量")
-        elif N_vid > 1 and N_prompt == 0 and N_img == 0: self.batch_mode_var.set("M9: 纯多视频批量")
-        elif N_img > 1 and N_prompt <= 1:
-             if "滑窗" not in current_mode and "组合" not in current_mode: self.batch_mode_var.set("M1: 多图单提示词/视频")
-        elif N_vid > 1 and N_prompt <= 1: self.batch_mode_var.set("M2: 多视频单提示词/图片")
-        elif N_prompt > 1 and N_img < 2 and N_vid < 2: self.batch_mode_var.set("M3: 纯多提示词批量")
-        elif "组合" not in current_mode: self.batch_mode_var.set("M0: 默认单请求模式")
+            uploaded_videos = [self._upload_file_and_get_url(f) for f in selected_videos_local]
+            uploaded_videos = [url for url in uploaded_videos if url]
 
-        final_mode = self.batch_mode_var.get()
-        self.update_log_display(f"已根据输入自动推荐模式，当前执行模式: {final_mode}", level='INFO')
+            if len(uploaded_images) != len(selected_images_local) or len(uploaded_videos) != len(selected_videos_local):
+                self.update_log_display("一个或多个批量文件上传失败。仅使用上传成功的文件生成任务。", level='WARNING')
 
-        self.request_payloads = []
-        base_payload_nodes = self._get_base_payload_nodes(image_id, video_id, text_id)
+            image_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'image'), None)
+            video_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'video'), None)
 
-        prompt_default = prompts[0] if N_prompt == 1 else (self.value_vars.get(text_id).get() if text_id and self.value_vars.get(text_id) else None)
-        image_default = self.file_vars.get(image_id).get() if image_id and self.file_vars.get(image_id) else None
-        video_default = self.file_vars.get(video_id).get() if video_id and self.file_vars.get(video_id) else None
+            fixed_image_local = self.file_vars.get(image_id).get() if image_id and self.file_vars.get(image_id) else None
+            fixed_video_local = self.file_vars.get(video_id).get() if video_id and self.file_vars.get(video_id) else None
 
-        if final_mode.startswith(("M0", "M3", "M6")):
-            items = prompts if N_prompt > 1 else [prompt_default]
-            img_val = selected_images[0] if N_img == 1 else image_default
-            for prompt in items:
-                 self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt, image_id, img_val, video_id, video_default))
-            if final_mode.startswith("M0"): self.request_payloads = self.request_payloads[:1]
-
-        elif final_mode.startswith(("M1", "M4", "M7", "M8", "M10", "M11")):
-            if final_mode.startswith("M4"):
-                 for img, prompt in zip(selected_images, prompts):
-                    self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt, image_id, img, video_id, video_default))
-            elif "M7" in final_mode:
-                window_size, step_size = (2, 1) if "M7a" in final_mode else (3, 2)
-                i = 0
-                while i + window_size <= N_img:
-                    image_value = ",".join(selected_images[i : i + window_size])
-                    self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, image_value, video_id, video_default))
-                    i += step_size
-            elif final_mode.startswith("M8"):
-                for img in selected_images:
-                    self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, None, image_id, img, video_id, None))
-
-            elif final_mode.startswith("M10"): # Fixed-single-image + multi-image
-                if not image_default:
-                    messagebox.showwarning("模式错误", "M10 模式要求在'单个请求参数'中选择一个固定的图片。")
+            uploaded_fixed_image = None
+            if fixed_image_local and ',' in fixed_image_local:
+                fixed_images_parts = [img.strip() for img in fixed_image_local.split(',')]
+                uploaded_fixed_parts = [self._upload_file_and_get_url(p) for p in fixed_images_parts]
+                uploaded_fixed_parts = [url for url in uploaded_fixed_parts if url]
+                if len(uploaded_fixed_parts) == len(fixed_images_parts):
+                     uploaded_fixed_image = ",".join(uploaded_fixed_parts)
                 else:
-                    for img in selected_images:
-                        combined_images = f"{image_default},{img}"
-                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, combined_images, video_id, video_default))
-
-            elif final_mode.startswith("M11"): # Fixed-double-image + multi-image
-                if not image_default or len(image_default.split(',')) != 2:
-                     messagebox.showwarning("模式错误", "M11 模式要求在'单个请求参数'的图片栏中填入两个固定的图片文件名，并用逗号分隔。")
-                else:
-                    for img in selected_images:
-                        combined_images = f"{image_default},{img}"
-                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, combined_images, video_id, video_default))
-
-            else: # M1
-                for img in selected_images:
-                    self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, img, video_id, video_default))
-
-        elif final_mode.startswith(("M2", "M9")):
-             if final_mode.startswith("M9"):
-                 for vid in selected_videos:
-                     self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, None, image_id, None, video_id, vid))
-             else:
-                for vid in selected_videos:
-                    self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, image_default, video_id, vid))
-
-        elif final_mode.startswith("M5"):
-            if N_img == 0 or N_prompt == 0:
-                 messagebox.showwarning("警告", "笛卡尔积模式要求同时选中多个图片和多个提示词。")
-                 self.request_payloads = [self._create_single_payload()]
+                     self.update_log_display("一个或多个固定图片上传失败。", level='ERROR')
             else:
-                 for img in selected_images:
-                     for prompt in prompts:
-                         self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt, image_id, img, video_id, video_default))
+                uploaded_fixed_image = self._upload_file_and_get_url(fixed_image_local)
 
-        if not self.request_payloads:
-             self.request_payloads = [self._create_single_payload()]
-             final_mode = "M0: 默认单请求模式 (兜底)"
+            uploaded_fixed_video = self._upload_file_and_get_url(fixed_video_local)
+            self.update_log_display("文件上传阶段完成。", level='INFO')
 
-        num_payloads = len(self.request_payloads)
-        self.match_status_label.config(text=f"匹配模式: **{final_mode}** ({num_payloads} 个负载)")
-        self.update_log_display(f"成功生成 {num_payloads} 个 API 请求负载。模式: {final_mode}", level='SUCCESS')
+            # 3. Extract prompts
+            self.extract_prompts_from_json(selected_jsons)
+            prompts = self.prompts
+
+            N_img, N_vid, N_prompt = len(uploaded_images), len(uploaded_videos), len(prompts)
+
+            # 4. Auto-recommend mode
+            text_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'text'), None)
+            current_mode = self.batch_mode_var.get()
+
+            if N_img > 1 and N_prompt > 1 and N_img == N_prompt: self.batch_mode_var.set("M4: 多图多提示词 1:1 顺序匹配")
+            elif N_img == 1 and N_prompt > 1: self.batch_mode_var.set("M6: 单图多提示词")
+            elif N_img > 1 and N_prompt == 0 and N_vid == 0: self.batch_mode_var.set("M8: 纯多图批量")
+            elif N_vid > 1 and N_prompt == 0 and N_img == 0: self.batch_mode_var.set("M9: 纯多视频批量")
+            elif N_img > 1 and N_prompt <= 1:
+                 if "滑窗" not in current_mode and "组合" not in current_mode: self.batch_mode_var.set("M1: 多图单提示词/视频")
+            elif N_vid > 1 and N_prompt <= 1: self.batch_mode_var.set("M2: 多视频单提示词/图片")
+            elif N_prompt > 1 and N_img < 2 and N_vid < 2: self.batch_mode_var.set("M3: 纯多提示词批量")
+            elif "组合" not in current_mode: self.batch_mode_var.set("M0: 默认单请求模式")
+
+            final_mode = self.batch_mode_var.get()
+            self.update_log_display(f"已根据输入自动推荐模式，当前执行模式: {final_mode}", level='INFO')
+
+            # 5. Generate payloads using UPLOADED URLs
+            self.request_payloads = []
+            base_payload_nodes = self._get_base_payload_nodes(image_id, video_id, text_id)
+
+            prompt_default = prompts[0] if N_prompt == 1 else (self.value_vars.get(text_id).get() if text_id and self.value_vars.get(text_id) else None)
+            image_default = uploaded_fixed_image
+            video_default = uploaded_fixed_video
+
+            if final_mode.startswith(("M0", "M3", "M6")):
+                items = prompts if N_prompt > 1 else [prompt_default]
+                img_val = uploaded_images[0] if N_img == 1 else image_default
+                for prompt in items:
+                     self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt, image_id, img_val, video_id, video_default))
+                if final_mode.startswith("M0"): self.request_payloads = self.request_payloads[:1]
+
+            elif final_mode.startswith(("M1", "M4", "M7", "M8", "M10", "M11")):
+                if final_mode.startswith("M4"):
+                     for img, prompt in zip(uploaded_images, prompts):
+                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt, image_id, img, video_id, video_default))
+                elif "M7" in final_mode:
+                    window_size, step_size = (2, 1) if "M7a" in final_mode else (3, 2)
+                    i = 0
+                    while i + window_size <= N_img:
+                        image_value = ",".join(uploaded_images[i : i + window_size])
+                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, image_value, video_id, video_default))
+                        i += step_size
+                elif final_mode.startswith("M8"):
+                    for img in uploaded_images:
+                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, None, image_id, img, video_id, None))
+                elif final_mode.startswith("M10"):
+                    if not image_default:
+                        messagebox.showwarning("模式错误", "M10 模式要求在'单个请求参数'中选择一个固定的图片 (且上传成功)。")
+                    else:
+                        for img in uploaded_images:
+                            combined_images = f"{image_default},{img}"
+                            self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, combined_images, video_id, video_default))
+                elif final_mode.startswith("M11"):
+                    if not image_default or len(image_default.split(',')) != 2:
+                         messagebox.showwarning("模式错误", "M11 模式要求在'单个请求参数'的图片栏中选择两个固定的图片 (且上传成功)。")
+                    else:
+                        for img in uploaded_images:
+                            combined_images = f"{image_default},{img}"
+                            self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, combined_images, video_id, video_default))
+                else: # M1
+                    for img in uploaded_images:
+                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, img, video_id, video_default))
+
+            elif final_mode.startswith(("M2", "M9")):
+                 if final_mode.startswith("M9"):
+                     for vid in uploaded_videos:
+                         self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, None, image_id, None, video_id, vid))
+                 else:
+                    for vid in uploaded_videos:
+                        self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, image_default, video_id, vid))
+            elif final_mode.startswith("M5"):
+                if N_img == 0 or N_prompt == 0:
+                     messagebox.showwarning("警告", "笛卡尔积模式要求同时选中多个图片和多个提示词。")
+                     self.request_payloads = [self._create_single_payload()]
+                else:
+                     for img in uploaded_images:
+                         for prompt in prompts:
+                             self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt, image_id, img, video_id, video_default))
+
+            if not self.request_payloads:
+                 self.request_payloads = [self._create_single_payload()]
+                 final_mode = "M0: 默认单请求模式 (兜底)"
+
+            num_payloads = len(self.request_payloads)
+            self.match_status_label.config(text=f"匹配模式: **{final_mode}** ({num_payloads} 个负载)")
+            self.update_log_display(f"成功生成 {num_payloads} 个 API 请求负载。模式: {final_mode}", level='SUCCESS')
+
+            if self.request_payloads:
+                self.update_log_display("--- 生成的请求负载 (JSON) ---", level='INFO')
+                for i, payload in enumerate(self.request_payloads):
+                    payload_str = json.dumps(payload, indent=2, ensure_ascii=False)
+                    self.update_log_display(f"--- 负载 #{i+1} ---\n{payload_str}", level='INFO')
+                self.update_log_display("--- 请求负载日志结束 ---", level='INFO')
+
+        finally:
+            self.generate_btn.config(state='normal')
+            if self.request_payloads:
+                self.run_btn.config(state='normal')
+
+    def _upload_file_and_get_url(self, local_filename):
+        """Uploads a single file and returns the server-side filename/URL."""
+        if not local_filename:
+            return None
+
+        filepath = os.path.join(self.current_directory, local_filename)
+        if not os.path.exists(filepath):
+            self.update_log_display(f"Upload Error: File not found at {filepath}", level='ERROR')
+            return None
+
+        file_type = 'video' if local_filename.lower().endswith(('.mp4', '.mov', '.avi', '.webm')) else 'image'
+        upload_url = "https://www.runninghub.cn/task/openapi/upload"
+
+        files = {'file': (local_filename, open(filepath, 'rb'))}
+        payload = {
+            'apiKey': self.API_DATA['apiKey'],
+            'fileType': file_type
+        }
+
+        self.update_log_display(f"Uploading {file_type}: {local_filename}...", level='INFO')
+
+        try:
+            response = requests.post(upload_url, data=payload, files=files)
+            response.raise_for_status()
+            response_data = response.json()
+
+            if response_data.get('code') == 0 and response_data.get('data', {}).get('fileName'):
+                server_filename = response_data['data']['fileName']
+                self.update_log_display(f"Upload successful: {local_filename} -> {server_filename}", level='SUCCESS')
+                return server_filename
+            else:
+                error_msg = response_data.get('msg', 'Unknown upload error')
+                self.update_log_display(f"Upload failed for {local_filename}: {error_msg}", level='ERROR')
+                return None
+        except requests.exceptions.RequestException as e:
+            self.update_log_display(f"Upload failed for {local_filename} with network error: {e}", level='ERROR')
+            return None
+        except Exception as e:
+            self.update_log_display(f"An unexpected error occurred during upload of {local_filename}: {e}", level='ERROR')
+            return None
 
     def _handle_single_task(self, payload, batch_id):
         """
