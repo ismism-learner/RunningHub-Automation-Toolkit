@@ -213,7 +213,7 @@ class APIRunnerApp:
             ttk.Label(row_frame, text=f"[{info['code']}] {info['name']}:", width=15, anchor="w").pack(side="left", padx=5)
             ttk.Label(row_frame, text=f"({info['type']})", width=8).pack(side="left")
 
-            if info['type'] in ("value", "text", "select"):
+            if info['type'] in ("value", "text", "select", "prompt"):
                 var = tk.StringVar(value=info['default_value'])
                 self.value_vars[info['code']] = var
                 editor = ttk.Entry(row_frame, textvariable=var, width=50)
@@ -399,8 +399,15 @@ class APIRunnerApp:
 
     def extract_prompts_from_json(self, json_filenames):
         self.prompts = []
-        text_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'text'), None)
-        if not text_id: return
+        text_node_info = next((info for info in self.INTERFACE_INFO if info['type'] in ('text', 'prompt')), None)
+
+        if not text_node_info:
+            if json_filenames:
+                self.update_log_display("当前API配置中未找到 'text' 或 'prompt' 类型的字段，无法加载提示词。", level='WARNING')
+            return
+
+        text_id = text_node_info['code']
+        dynamic_prompt_key = text_node_info['type']
 
         for filename in json_filenames:
             filepath = os.path.join(self.current_directory, filename)
@@ -408,18 +415,32 @@ class APIRunnerApp:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
-                if isinstance(data, list) and all(isinstance(item, dict) and 'prompt' in item for item in data):
-                    self.prompts.extend([item['prompt'] for item in data if item.get('prompt')])
-                    continue
+                parsed = False
+                # 1. Try to parse based on a list of dictionaries with a dynamic key
+                if isinstance(data, list) and data and isinstance(data[0], dict):
+                    if dynamic_prompt_key in data[0]:
+                        self.prompts.extend([item.get(dynamic_prompt_key) for item in data])
+                        parsed = True
+                    # Backward compatibility for hardcoded "prompt" key
+                    elif 'prompt' in data[0]:
+                        self.prompts.extend([item.get('prompt') for item in data])
+                        self.update_log_display(f"警告: JSON文件 {filename} 使用 'prompt' 键，但当前API配置需要 '{dynamic_prompt_key}'。已作为兼容模式加载。", level='WARNING')
+                        parsed = True
 
-                if isinstance(data, dict): data = [data]
+                if parsed: continue
 
-                if isinstance(data, list):
-                    for payload in data:
+                # 2. Try to parse a full API payload format
+                temp_data = [data] if isinstance(data, dict) else data
+                if isinstance(temp_data, list) and temp_data and isinstance(temp_data[0], dict) and 'nodeInfoList' in temp_data[0]:
+                    for payload in temp_data:
                         for node in payload.get('nodeInfoList', []):
                             if node.get('nodeId') == text_id and node.get('fieldValue'):
                                 self.prompts.append(node['fieldValue'])
+                    parsed = True
 
+                if parsed: continue
+
+                # 3. Try to parse a simple list of strings
                 if isinstance(data, list) and all(isinstance(item, str) for item in data):
                      self.prompts.extend(data)
 
@@ -559,7 +580,7 @@ class APIRunnerApp:
             N_img, N_vid, N_prompt = len(uploaded_images), len(uploaded_videos), len(prompts)
 
             # 4. Auto-recommend mode
-            text_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] == 'text'), None)
+            text_id = next((info['code'] for info in self.INTERFACE_INFO if info['type'] in ('text', 'prompt')), None)
             current_mode = self.batch_mode_var.get()
 
             if N_img > 1 and N_prompt > 1 and N_img == N_prompt: self.batch_mode_var.set("M4: 多图多提示词 1:1 顺序匹配")
@@ -605,7 +626,7 @@ class APIRunnerApp:
                     for img in uploaded_images:
                         self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, None, image_id, img, video_id, None))
                 elif final_mode.startswith("M10"):
-                    if not image_default:
+                    if not image_default or ',' in image_default:
                         messagebox.showwarning("模式错误", "M10 模式要求在'单个请求参数'中选择一个固定的图片 (且上传成功)。")
                     else:
                         for img in uploaded_images:
@@ -613,7 +634,7 @@ class APIRunnerApp:
                             self.request_payloads.append(self._create_payload(base_payload_nodes, text_id, prompt_default, image_id, combined_images, video_id, video_default))
                 elif final_mode.startswith("M11"):
                     if not image_default or len(image_default.split(',')) != 2:
-                         messagebox.showwarning("模式错误", "M11 模式要求在'单个请求参数'的图片栏中选择两个固定的图片 (且上传成功)。")
+                     messagebox.showwarning("模式错误", "M11 模式要求在'单个请求参数'的图片栏中填入两个固定的图片文件名，并用逗号分隔 (且全部上传成功)。")
                     else:
                         for img in uploaded_images:
                             combined_images = f"{image_default},{img}"
